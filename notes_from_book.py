@@ -40,45 +40,47 @@ class SearchResult:
 
 class EpubUtils:
     @classmethod
-    def find_chapter_containing_text_in_epub(cls, text, epub_path, file_start_idx=0) -> SearchResult:
+    def find_chapter_containing_text_in_epub(cls, text, zip_ref, file_start_idx=0) -> SearchResult:
         global total_not_found
-        with zipfile.ZipFile(epub_path, 'r') as zip_ref:
-            # iterate files in the epub
-            namelist = zip_ref.namelist()
-            for file_idx in range(file_start_idx, len(namelist)):
-                file_name = namelist[file_idx]
-                if file_name.endswith(('.html', '.xhtml')):
-                    with zip_ref.open(file_name) as file:
-                        soup = BeautifulSoup(file.read(), 'html.parser')
-                        # soup_text = soup.get_text()
-                        # find_txt_idx = soup_text.find(text)
 
-                        soup_text = soup.get_text(separator=" ")
-                        normalized_soup_text = re.sub(r'\s+', ' ', soup_text).strip()
-                        normalized_soup_text = re.sub(r'\s+([.,:;!?’\'])', r'\1', normalized_soup_text)
-                        normalized_target = re.sub(r'\s+', ' ', text).strip()
-                        find_txt_idx = normalized_soup_text.find(normalized_target)
-                        # logger.info(normalized_soup_text)
+        # iterate files in the epub
+        namelist = zip_ref.namelist()
+        for file_idx in range(file_start_idx, len(namelist)):
+            file_name = namelist[file_idx]
+            if not file_name.endswith(('.html', '.xhtml')):
+                continue
 
-                        if find_txt_idx != -1:
-                            chapter_titles = []
+            with zip_ref.open(file_name) as file:
+                soup = BeautifulSoup(file.read(), 'html.parser')
+                # soup_text = soup.get_text()
+                # find_txt_idx = soup_text.find(text)
 
-                            # note: chapter title in some books may be in 'h1',
-                            # in others in 'title' (though sometimes 'title' is the book title)
+                soup_text = soup.get_text(separator=" ")
+                normalized_soup_text = re.sub(r'\s+', ' ', soup_text).strip()
+                normalized_soup_text = re.sub(r'\s+([.,:;!?’\'])', r'\1', normalized_soup_text)
+                normalized_target = re.sub(r'\s+', ' ', text).strip()
+                find_txt_idx = normalized_soup_text.find(normalized_target)
+                # logger.info(normalized_soup_text)
 
-                            # if book title is printed - may comment this out
-                            title_from_head = soup.find('title')
-                            if title_from_head and title_from_head.text:
-                                chapter_titles.append(title_from_head.text)
+                if find_txt_idx != -1:
+                    chapter_titles = []
 
-                            # add chapter title from h tags
-                            h_tags = soup.find_all(['h1', 'h2', 'h3'])
-                            chapter_titles.extend([title.text for title in h_tags])
+                    # note: chapter title in some books may be in 'h1',
+                    # in others in 'title' (though sometimes 'title' is the book title)
 
-                            chapter_title = " | ".join(chapter_titles)
-                            search_res = SearchResult(chapter_title, find_txt_idx, file_idx, file_name.split('/')[-1])
-                            # logger.info(f"{text}, {chapter_title}, {find_txt_idx}, {file_idx} {file_name}")
-                            return search_res
+                    # if book title is printed - may comment this out
+                    title_from_head = soup.find('title')
+                    if title_from_head and title_from_head.text:
+                        chapter_titles.append(title_from_head.text)
+
+                    # add chapter title from h tags
+                    h_tags = soup.find_all(['h1', 'h2', 'h3'])
+                    chapter_titles.extend([title.text for title in h_tags])
+
+                    chapter_title = " | ".join(chapter_titles)
+                    search_res = SearchResult(chapter_title, find_txt_idx, file_idx, file_name.split('/')[-1])
+                    # logger.info(f"{text}, {chapter_title}, {find_txt_idx}, {file_idx} {file_name}")
+                    return search_res
 
         total_not_found += 1
         logger.warning(f"Could not find chapter containing text (start idx: {file_start_idx}):\n{text}")
@@ -100,45 +102,47 @@ def process_notes(notes, book_path):
 
     # a chapter might be spread on multiple files, e.g 'ch04.xhtml' and 'ch04a.xhtml'
     chapter_to_paragraphs = dict()
-    for line in lines:
-        if not line:
-            continue
 
-        lookup_txt = line[:NUM_FIRST_CHARS_TO_LOOKUP]
-        # file_start_idx = max(0, prev_file_idx - 1) # this optimization attempt is not working well
-        file_start_idx = 0
-        search_res = EpubUtils.find_chapter_containing_text_in_epub(lookup_txt, book_path, file_start_idx)
+    with zipfile.ZipFile(book_path, 'r') as zip_ref:
+        for line in lines:
+            if not line:
+                continue
 
-        chapter_name = search_res.chapter_title
+            lookup_txt = line[:NUM_FIRST_CHARS_TO_LOOKUP]
+            # file_start_idx = max(0, prev_file_idx - 1) # this optimization attempt is not working well
+            file_start_idx = 0
+            search_res = EpubUtils.find_chapter_containing_text_in_epub(lookup_txt, zip_ref, file_start_idx)
 
-        if search_res.txt_idx > 0:
-            if not chapter_name:
-                logger.warning(
-                    f"no chapter_name found. lookup_txt='{lookup_txt}', {search_res}. using prev_chapter_title='{prev_chapter_title}'")
-                chapter_name = prev_chapter_title
-                line = f"? {line}"
-                # if len(chapter_to_paragraphs[chapter_name]) <= 1:
-                #     # if only one paragraph for prev chapter, maybe current line is from prev chapter
+            chapter_name = search_res.chapter_title
 
-            if chapter_name not in chapter_to_paragraphs:
-                chapter_to_paragraphs[chapter_name] = []
+            if search_res.txt_idx > 0:
+                if not chapter_name:
+                    logger.warning(
+                        f"no chapter_name found. lookup_txt='{lookup_txt}', {search_res}. using prev_chapter_title='{prev_chapter_title}'")
+                    chapter_name = prev_chapter_title
+                    line = f"? {line}"
+                    # if len(chapter_to_paragraphs[chapter_name]) <= 1:
+                    #     # if only one paragraph for prev chapter, maybe current line is from prev chapter
 
-            chapter_to_paragraphs[chapter_name].append([line, search_res.txt_idx, search_res.file_name])
+                if chapter_name not in chapter_to_paragraphs:
+                    chapter_to_paragraphs[chapter_name] = []
 
-            prev_chapter_title = chapter_name
-        else:
-            # handle not found
-            if prev_chapter_title:
-                # append to previous known chapter
-                logger.warning(
-                    f"add to prev_chapter_title='{prev_chapter_title}', lookup_txt={lookup_txt}, {search_res}")
-                chapter_to_paragraphs[prev_chapter_title].append([f"? {line}", -1, ''])
+                chapter_to_paragraphs[chapter_name].append([line, search_res.txt_idx, search_res.file_name])
+
+                prev_chapter_title = chapter_name
             else:
-                logger.warning(f"add to unknown lookup_txt='{lookup_txt}', {search_res}")
-                unknown = 'unknown'
-                if not unknown in chapter_to_paragraphs:
-                    chapter_to_paragraphs[unknown] = []
-                chapter_to_paragraphs[unknown].append([f"? {line}", -1, ''])
+                # handle not found
+                if prev_chapter_title:
+                    # append to previous known chapter
+                    logger.warning(
+                        f"add to prev_chapter_title='{prev_chapter_title}', lookup_txt={lookup_txt}, {search_res}")
+                    chapter_to_paragraphs[prev_chapter_title].append([f"? {line}", -1, ''])
+                else:
+                    logger.warning(f"add to unknown lookup_txt='{lookup_txt}', {search_res}")
+                    unknown = 'unknown'
+                    if not unknown in chapter_to_paragraphs:
+                        chapter_to_paragraphs[unknown] = []
+                    chapter_to_paragraphs[unknown].append([f"? {line}", -1, ''])
 
     # add all chapters
     for chapter_name, curr_chapter_paragraphs in chapter_to_paragraphs.items():
