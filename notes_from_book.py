@@ -111,11 +111,12 @@ def process_notes(notes, book_path):
             lookup_txt = line[:NUM_FIRST_CHARS_TO_LOOKUP]
             # file_start_idx = max(0, prev_file_idx - 1) # this optimization attempt is not working well
             file_start_idx = 0
+            # note: could use more memory to make this more efficient, but it works fast enough for a one-time run
             search_res = EpubUtils.find_chapter_containing_text_in_epub(lookup_txt, zip_ref, file_start_idx)
 
             chapter_name = search_res.chapter_title
 
-            if search_res.txt_idx > 0:
+            if search_res.txt_idx >= 0:
                 if not chapter_name:
                     logger.warning(
                         f"no chapter_name found. lookup_txt='{lookup_txt}', {search_res}. using prev_chapter_title='{prev_chapter_title}'")
@@ -149,15 +150,18 @@ def process_notes(notes, book_path):
         logger.info(f"Chapter: {chapter_name}")
         result.append(f"\n\n{chapter_name}\n")
 
+        _sort_chapter_paragraphs(curr_chapter_paragraphs)
+
         # add paragraphs
-        _add_sorted_chapter_paragraphs(curr_chapter_paragraphs, result)
+        # result.append("\n")
+        result.append("\n\n".join([f"{x[0]}" for x in curr_chapter_paragraphs]))
 
     logger.info(f"total not found: {total_not_found}")
     print("\n".join(result))
     return result
 
 
-def _add_sorted_chapter_paragraphs(curr_chapter_paragraphs, result):
+def _sort_chapter_paragraphs(curr_chapter_paragraphs):
     # sort by file name, then by index
     curr_chapter_paragraphs.sort(key=lambda x: (x[2], x[1]))
     # logger.info(curr_chapter_paragraphs)
@@ -165,9 +169,6 @@ def _add_sorted_chapter_paragraphs(curr_chapter_paragraphs, result):
     # log file names
     filenames = set([x[2] for x in curr_chapter_paragraphs])
     logger.info(f"filenames={filenames}")
-
-    # result.append("\n")
-    result.append("\n\n".join([f"{x[0]}" for x in curr_chapter_paragraphs]))
 
 
 if __name__ == '__main__':
